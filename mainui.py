@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 import sys
 
+import cv2
+import numpy as np
+import pydicom
 # Form implementation generated from reading ui file 'mainui.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.9
@@ -10,7 +13,8 @@ import sys
 
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
 
 
 class Ui_MainWindow(object):
@@ -215,6 +219,12 @@ class Ui_MainWindow(object):
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
+        self.openButton.clicked.connect(self.open_file_dialog) ## 打开文件
+        self.imgpath = ""
+        self.enhanceButton_2.clicked.connect(self.enhance)
+        self.junhenghuaButton.clicked.connect(self.junhen)
+        self.noiseButton.clicked.connect(self.mov_noise)
+
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
@@ -236,6 +246,123 @@ class Ui_MainWindow(object):
         self.instructionButton_7.setText(_translate("MainWindow", "手术指导"))
         self.saveButton.setText(_translate("MainWindow", "保存结果"))
         self.label_5.setText(_translate("MainWindow", "操作台"))
+
+    def open_file_dialog(self):
+        # Open a file dialog and allow user to select a file
+        options = QFileDialog.Options()
+        options |= QFileDialog.ReadOnly
+        file_path, _ = QFileDialog.getOpenFileName(None, "Select a file", "", "All Files (*);;DICOM Files (*.dcm)",
+                                                       options=options)
+        if file_path:
+            self.imgpath = file_path  # Display the selected file path
+            # print(file_path)
+            data_path = file_path
+            # 读取单张图片
+            img = pydicom.dcmread(data_path)
+            img_data = img.pixel_array
+            print(type(img_data))
+            # Normalize the pixel array to 0-255
+            pixel_array = (img.pixel_array - np.min(img.pixel_array)) / (
+                        np.max(img.pixel_array) - np.min(img.pixel_array)) * 255
+            pixel_array = pixel_array.astype(np.uint8)
+
+            # Create QImage from pixel array
+            height, width = pixel_array.shape
+            bytes_per_line = width
+            q_image = QImage(pixel_array.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+
+            # Set the QImage to a QLabel
+            self.or_image.setPixmap(QPixmap.fromImage(q_image))
+            self.or_image.setScaledContents(True)  # Allow image to scale to label size
+
+    def apply_windowing(image, window_center, window_width):
+        """
+        Apply windowing to the given image.
+        """
+        min_val = window_center - window_width / 2
+        max_val = window_center + window_width / 2
+
+        # Apply the windowing
+        windowed_image = np.clip(image, min_val, max_val)
+        windowed_image = ((windowed_image - min_val) / (max_val - min_val)) * 255.0
+        windowed_image = windowed_image.astype(np.uint8)
+
+        return windowed_image
+    def enhance(self):
+        # 读取 DICOM 文件
+        dicom_path = self.imgpath
+        dicom_data = pydicom.dcmread(dicom_path)
+        pixel_array = dicom_data.pixel_array
+
+        # 示例窗口参数
+        window_center = 40
+        window_width = 80
+
+        min_val = window_center - window_width / 2
+        max_val = window_center + window_width / 2
+
+        # Apply the windowing
+        windowed_image = np.clip(pixel_array, min_val, max_val)
+        windowed_image = ((windowed_image - min_val) / (max_val - min_val)) * 255.0
+        windowed_image = windowed_image.astype(np.uint8)
+
+        height, width = windowed_image.shape
+        bytes_per_line = width
+        q_image = QImage(windowed_image.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+
+        # Set the QImage to a QLabel
+
+        self.processsed_image.setPixmap(QPixmap.fromImage(q_image))
+        self.processsed_image.setScaledContents(True)
+
+    def junhen(self):
+        # Load DICOM file
+        dicom_data = pydicom.dcmread(self.imgpath)
+        pixel_array = dicom_data.pixel_array
+
+        # Apply histogram equalization
+        # Normalize the pixel array to the range [0, 255]
+        image_normalized = cv2.normalize(pixel_array, None, 0, 255, cv2.NORM_MINMAX)
+        image_normalized = image_normalized.astype(np.uint8)
+
+        # Apply histogram equalization
+        equalized_image = cv2.equalizeHist(image_normalized)
+
+        # Convert equalized image to QImage
+        height, width = equalized_image.shape
+        bytes_per_line = width
+        q_image = QImage(equalized_image.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+
+        # Set the QImage to a QLabel
+
+        self.processsed_image.setPixmap(QPixmap.fromImage(q_image))
+        self.processsed_image.setScaledContents(True)
+
+    def mov_noise(self):
+        # Load DICOM file
+        dicom_data = pydicom.dcmread(self.imgpath)
+        pixel_array = dicom_data.pixel_array
+
+        # Apply denoising methods
+        # Normalize the pixel array to the range [0, 255]
+        image_normalized = cv2.normalize(pixel_array, None, 0, 255, cv2.NORM_MINMAX)
+        image_normalized = image_normalized.astype(np.uint8)
+
+        # Apply Gaussian blur
+        denoised_image = cv2.GaussianBlur(image_normalized, (5, 5), 1.5)
+        # or use other methods: denoised_image = self.bilateral_denoise(pixel_array)
+        # or denoised_image = self.nlm_denoise(pixel_array)
+
+        # Convert denoised image to QImage
+        height, width = denoised_image.shape
+        bytes_per_line = width
+        q_image = QImage(denoised_image.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+
+        # Set the QImage to a QLabel
+
+        self.processsed_image.setPixmap(QPixmap.fromImage(q_image))
+        self.processsed_image.setScaledContents(True)
+
 
 if __name__ == '__main__':
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
